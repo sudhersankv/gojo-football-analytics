@@ -119,7 +119,7 @@ export default function LeagueDashboard() {
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <LeagueHeader />
-      <div className="h-1" style={{ background: "linear-gradient(to right, #37003c, #37003c, #00ff85)" }} />
+      <div className="h-1" style={{ background: "linear-gradient(to right, var(--color-primary), var(--color-primary), var(--color-accent))" }} />
 
       <main className="mx-auto max-w-5xl px-4 py-6">
         <div className="flex flex-col lg:flex-row gap-6">
@@ -134,7 +134,7 @@ export default function LeagueDashboard() {
                       ? "text-white"
                       : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
                   }`}
-                  style={filter === f ? { backgroundColor: "#37003c" } : undefined}
+                  style={filter === f ? { backgroundColor: "var(--color-primary)" } : undefined}
                 >
                   {f === "results" ? "Results" : f}
                 </button>
@@ -161,12 +161,12 @@ export default function LeagueDashboard() {
                 >
                   <h3
                     className={`mb-2 text-xs font-semibold uppercase tracking-wider ${
-                      isCurrent ? "text-pl-purple" : "text-gray-500"
+                      isCurrent ? "text-primary" : "text-gray-500"
                     }`}
                   >
                     {round}
                     {isCurrent && (
-                      <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[9px] bg-pl-purple/10 text-pl-purple font-bold">
+                      <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[9px] bg-primary/10 text-primary font-bold">
                         Current
                       </span>
                     )}
@@ -191,7 +191,7 @@ export default function LeagueDashboard() {
                   <Link
                     to={`/league/${currentTheme}/standings`}
                     className="text-[10px] font-semibold hover:underline uppercase"
-                    style={{ color: "#37003c" }}
+                    style={{ color: "var(--color-primary)" }}
                   >
                     View all
                   </Link>
@@ -215,13 +215,13 @@ export default function LeagueDashboard() {
                             className="flex items-center gap-1.5 group"
                           >
                             <ImageWithFallback src={row.team?.logo_url} type="team" className="h-4 w-4 object-contain" />
-                            <span className="font-medium text-gray-700 truncate group-hover:text-pl-purple transition-colors">
+                            <span className="font-medium text-gray-700 truncate group-hover:text-primary transition-colors">
                               {row.team?.name}
                             </span>
                           </Link>
                         </td>
                         <td className="py-1.5 text-center text-gray-500">{row.all_played}</td>
-                        <td className="py-1.5 text-center font-bold" style={{ color: "#37003c" }}>{row.points}</td>
+                        <td className="py-1.5 text-center font-bold" style={{ color: "var(--color-primary)" }}>{row.points}</td>
                       </tr>
                     ))}
                   </tbody>

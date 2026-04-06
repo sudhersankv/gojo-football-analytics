@@ -107,7 +107,7 @@ function CustomTooltip({ active, payload }) {
   return (
     <div className="rounded-lg bg-white border border-gray-200 px-3 py-2 shadow-lg text-xs">
       <p className="font-semibold text-gray-800">{d.stat}</p>
-      <p className="text-gray-600">Value: <span className="font-bold" style={{ color: "#37003c" }}>{d.raw}</span></p>
+      <p className="text-gray-600">Value: <span className="font-bold" style={{ color: "var(--color-primary)" }}>{d.raw}</span></p>
     </div>
   );
 }
@@ -155,11 +155,11 @@ export default function PlayerRadarChart({ stats, mode = "match", position }) {
           <Radar
             name="Performance"
             dataKey="value"
-            stroke="#37003c"
-            fill="#37003c"
+            stroke="var(--color-primary)"
+            fill="var(--color-primary)"
             fillOpacity={0.12}
             strokeWidth={2}
-            dot={{ fill: "#37003c", r: 3 }}
+            dot={{ fill: "var(--color-primary)", r: 3 }}
           />
           <Tooltip content={<CustomTooltip />} />
         </RadarChart>

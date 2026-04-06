@@ -3,7 +3,7 @@ export default function Spinner({ className = "" }) {
     <div className={`flex items-center justify-center py-20 ${className}`}>
       <div
         className="h-8 w-8 animate-spin rounded-full border-[3px] border-gray-200"
-        style={{ borderTopColor: "#37003c" }}
+        style={{ borderTopColor: "var(--color-primary)" }}
       />
     </div>
   );

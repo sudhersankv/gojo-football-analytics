@@ -36,7 +36,7 @@ export default function MatchTimeline({ events, homeTeamId }) {
                 className="flex items-center gap-1.5 text-xs mb-0.5"
                 style={{ justifyContent: isHome ? "flex-end" : "flex-start" }}
               >
-                <span className="font-mono font-bold" style={{ color: "#37003c" }}>{minute}</span>
+                <span className="font-mono font-bold" style={{ color: "var(--color-primary)" }}>{minute}</span>
                 <span className="text-sm">{eventIcon(ev.event_type, ev.detail)}</span>
               </div>
               <p className="text-sm font-semibold text-gray-800">{ev.player_name || "Unknown"}</p>
@@ -55,7 +55,7 @@ export default function MatchTimeline({ events, homeTeamId }) {
 
             <div
               className="absolute left-1/2 top-2.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border-2 border-white z-10"
-              style={{ backgroundColor: "#37003c" }}
+              style={{ backgroundColor: "var(--color-primary)" }}
             />
 
             <div className="w-[44%]" />

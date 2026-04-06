@@ -9,6 +9,13 @@ const leagues = [
     country: "England",
     season: "2025/26",
   },
+  {
+    slug: "la-liga",
+    name: "La Liga",
+    logo: "https://media.api-sports.io/football/leagues/140.png",
+    country: "Spain",
+    season: "2025/26",
+  },
 ];
 
 export default function Home() {

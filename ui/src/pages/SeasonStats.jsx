@@ -69,7 +69,7 @@ export default function SeasonStats() {
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <LeagueHeader />
-      <div className="h-1" style={{ background: "linear-gradient(to right, #37003c, #37003c, #00ff85)" }} />
+      <div className="h-1" style={{ background: "linear-gradient(to right, var(--color-primary), var(--color-primary), var(--color-accent))" }} />
 
       <main className="mx-auto max-w-3xl px-4 py-6">
         <h2 className="text-xl font-bold text-gray-900 mb-5">Season Stats</h2>
@@ -84,7 +84,7 @@ export default function SeasonStats() {
                   ? "text-white"
                   : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
               }`}
-              style={tab === t.key ? { backgroundColor: "#37003c" } : undefined}
+              style={tab === t.key ? { backgroundColor: "var(--color-primary)" } : undefined}
             >
               {t.label}
             </button>
@@ -142,7 +142,7 @@ export default function SeasonStats() {
                             type="player"
                             className="h-7 w-7 rounded-full object-cover"
                           />
-                          <span className="font-semibold text-gray-800 group-hover:text-pl-purple transition-colors">
+                          <span className="font-semibold text-gray-800 group-hover:text-primary transition-colors">
                             {player?.name || "—"}
                           </span>
                         </Link>
@@ -157,7 +157,7 @@ export default function SeasonStats() {
                             type="team"
                             className="h-5 w-5 object-contain"
                           />
-                          <span className="text-gray-600 text-xs group-hover:text-pl-purple transition-colors truncate max-w-[100px]">
+                          <span className="text-gray-600 text-xs group-hover:text-primary transition-colors truncate max-w-[100px]">
                             {team?.name || "—"}
                           </span>
                         </Link>
@@ -170,12 +170,12 @@ export default function SeasonStats() {
                       </td>
 
                       {tab === "goals" && (
-                        <td className="py-2.5 px-3 text-center font-bold tabular-nums" style={{ color: "#37003c" }}>
+                        <td className="py-2.5 px-3 text-center font-bold tabular-nums" style={{ color: "var(--color-primary)" }}>
                           {row.goals ?? 0}
                         </td>
                       )}
                       {tab === "assists" && (
-                        <td className="py-2.5 px-3 text-center font-bold tabular-nums" style={{ color: "#37003c" }}>
+                        <td className="py-2.5 px-3 text-center font-bold tabular-nums" style={{ color: "var(--color-primary)" }}>
                           {row.assists ?? 0}
                         </td>
                       )}

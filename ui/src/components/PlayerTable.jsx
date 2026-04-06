@@ -54,7 +54,7 @@ export default function PlayerTable({ players, homeTeamId, awayTeamId, homeTeamN
                 ? "text-white"
                 : "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200"
             }`}
-            style={selectedTeam === key ? { backgroundColor: "#37003c" } : undefined}
+            style={selectedTeam === key ? { backgroundColor: "var(--color-primary)" } : undefined}
           >
             {label || key}
           </button>
@@ -103,7 +103,7 @@ export default function PlayerTable({ players, homeTeamId, awayTeamId, homeTeamN
                                 type="player"
                                 className="h-5 w-5 rounded-full object-cover"
                               />
-                              <span className="font-medium text-gray-800 group-hover:text-pl-purple transition-colors whitespace-nowrap">
+                              <span className="font-medium text-gray-800 group-hover:text-primary transition-colors whitespace-nowrap">
                                 {name}
                               </span>
                             </Link>
