@@ -10,6 +10,7 @@ export default function LeagueHeader() {
   const tabs = [
     { to: `/league/${slug}`, label: "Matches" },
     { to: `/league/${slug}/standings`, label: "Standings" },
+    { to: `/league/${slug}/stats`, label: "Stats" },
   ];
 
   return (

@@ -5,14 +5,14 @@
 @tailwind utilities;
 
 :root {
-  --color-bg: #050508;
-  --color-primary: #6d28d9;
-  --color-accent: #818cf8;
-  --color-surface: #0f0f18;
-  --color-surface-alt: #1a1a2e;
-  --color-text: #f1f5f9;
-  --color-text-secondary: #94a3b8;
-  --color-border: #1e1e3a;
+  --color-bg: #ffffff;
+  --color-primary: #37003c;
+  --color-accent: #00ff85;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f9fafb;
+  --color-text: #111827;
+  --color-text-secondary: #6b7280;
+  --color-border: #e5e7eb;
 }
 
 * {
@@ -24,8 +24,9 @@
 body {
   font-family: "Inter", system-ui, sans-serif;
   min-height: 100vh;
+  background-color: var(--color-bg);
+  color: var(--color-text);
   -webkit-font-smoothing: antialiased;
-  transition: background-color 0.35s ease, color 0.25s ease;
 }
 
 ::-webkit-scrollbar {
@@ -35,6 +36,6 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #64748b;
+  background: #d1d5db;
   border-radius: 3px;
 }

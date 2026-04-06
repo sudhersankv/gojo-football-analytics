@@ -117,7 +117,7 @@ export default function PlayerDetail() {
               <div className="flex items-center gap-3 mt-1.5 text-xs opacity-60">
                 {player.nationality && <span>{player.nationality}</span>}
                 {player.birth_date && <span>Born: {new Date(player.birth_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</span>}
-                {mainSeason?.position && <span>{mainSeason.position}</span>}
+                {mainSeason?.position && <span>{mainSeason.position === "Attacker" ? "Forward" : mainSeason.position}</span>}
                 {mainSeason?.number && <span>#{mainSeason.number}</span>}
               </div>
             </div>
@@ -282,7 +282,7 @@ function MatchView({ stats, currentTheme }) {
         <StatCard label="Offsides" value={merged.offsides} small />
       </div>
 
-      <PlayerRadarChart stats={stats} mode="match" />
+      <PlayerRadarChart stats={stats} mode="match" position={stats.position} />
     </section>
   );
 }
@@ -347,7 +347,7 @@ function SeasonView({ stats }) {
         </div>
       )}
 
-      <PlayerRadarChart stats={stats} mode="season" />
+      <PlayerRadarChart stats={stats} mode="season" position={stats.position} />
     </section>
   );
 }

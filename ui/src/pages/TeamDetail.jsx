@@ -33,7 +33,7 @@ function ratingColor(r) {
   return "text-red-600";
 }
 
-const POS_ORDER = { G: 0, D: 1, M: 2, F: 3 };
+const POS_ORDER = { G: 0, D: 1, M: 2, F: 3, A: 3 };
 
 export default function TeamDetail() {
   const { id } = useParams();
@@ -98,7 +98,7 @@ export default function TeamDetail() {
   const positionSections = Object.entries(groupedSquad).sort(
     ([a], [b]) => (POS_ORDER[a] ?? 9) - (POS_ORDER[b] ?? 9),
   );
-  const POS_FULL = { G: "Goalkeepers", D: "Defenders", M: "Midfielders", F: "Forwards" };
+  const POS_FULL = { G: "Goalkeepers", D: "Defenders", M: "Midfielders", F: "Forwards", A: "Forwards" };
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">

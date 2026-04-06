@@ -1,9 +1,11 @@
 .env
 **/.env
 __pycache__/
+**/__pycache__/
 *.pyc
 .venv/
 venv/
 out/
+**/out/
 node_modules/
 ui/dist/

@@ -4,6 +4,7 @@ import Home from "./pages/Home";
 import LeagueDashboard from "./pages/LeagueDashboard";
 import MatchDetail from "./pages/MatchDetail";
 import Standings from "./pages/Standings";
+import SeasonStats from "./pages/SeasonStats";
 import PlayerDetail from "./pages/PlayerDetail";
 import TeamDetail from "./pages/TeamDetail";
 
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/league/:slug" element={<LeagueDashboard />} />
           <Route path="/league/:slug/match/:id" element={<MatchDetail />} />
           <Route path="/league/:slug/standings" element={<Standings />} />
+          <Route path="/league/:slug/stats" element={<SeasonStats />} />
           <Route path="/league/:slug/player/:id" element={<PlayerDetail />} />
           <Route path="/league/:slug/team/:id" element={<TeamDetail />} />
         </Routes>
