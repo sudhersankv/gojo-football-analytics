@@ -20,7 +20,7 @@ HEADERS = {"x-apisports-key": os.environ.get("FOOTBALL_API_KEY", "")}
 # MLS in API-Football is often league id 253 (verify via /leagues?country=USA&season=2025)
 MLS_LEAGUE_ID = 253
 
-# Repo root: .../Gojo ; script lives in .../Gojo/src/
+# Repo root: .../Gojo ; script lives in .../Gojo/misc/
 OUT_DIR = Path(__file__).resolve().parent.parent / "out"
 
 
@@ -135,4 +135,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
