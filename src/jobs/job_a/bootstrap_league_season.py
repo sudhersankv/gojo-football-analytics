@@ -1,6 +1,11 @@
 """
 Job A — Bootstrap / full snapshot for a league-season.
 
+Premier League only: `--league` must be 39. Nothing from other competitions is
+persisted: player season stats filter on `statistics[].league.id`; fixtures and
+post-match detail only process payloads whose `league.id` matches; standings are
+validated before upsert.
+
 Populates every table with all data currently available from API-Football:
 
   Phase 1: Reference entities
@@ -8,7 +13,7 @@ Populates every table with all data currently available from API-Football:
 
   Phase 2: Players & squads
     - players (from /players endpoint, all pages)
-    - squad_players (derived from player-season stats: each player→team link)
+    - squad_players (from /players/squads per team in the league-season)
     - player_season_statistics (full season aggregates)
 
   Phase 3: Fixtures (schedule + completed)
@@ -70,7 +75,7 @@ from env_loader import load_repo_dotenv  # noqa: E402
 # Constants
 # ---------------------------------------------------------------------------
 BASE_URL = "https://v3.football.api-sports.io"
-DEFAULT_LEAGUE_ID = 39       # Premier League
+DEFAULT_LEAGUE_ID = 39       # Premier League (only league supported by this job)
 DEFAULT_SEASON_YEAR = 2025   # API season year (e.g. 2025 = 2025/26 campaign)
 FIXTURE_IDS_CHUNK = 20       # API supports up to 20 fixture IDs per request
 
@@ -128,6 +133,29 @@ def _stat_value_to_text(value: Any) -> str | None:
 def _chunks(lst: list, n: int) -> list[list]:
     """Split a list into sublists of at most n elements."""
     return [lst[i : i + n] for i in range(0, len(lst), n)]
+
+
+def _payload_league_id(payload: dict[str, Any]) -> int | None:
+    """League id from a fixture-style or standings-style API item."""
+    lg = payload.get("league") or {}
+    lid = lg.get("id")
+    if lid is None:
+        return None
+    try:
+        return int(lid)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_target_league_payload(payload: dict[str, Any], league_id: int) -> bool:
+    """
+    If the payload includes a league id, it must match (drops UCL etc.).
+    If missing, accept (caller used ?league=39 so the row is still PL-scoped).
+    """
+    lid = _payload_league_id(payload)
+    if lid is None:
+        return True
+    return lid == int(league_id)
 
 
 # ---------------------------------------------------------------------------
@@ -333,8 +361,7 @@ class Writer:
     def upsert_squad_players(self, season_id: int, player_team_pairs: list[tuple[int, int]]) -> None:
         """
         Upsert squad_players rows. Each pair is (player_id, team_id).
-        Derived from player-season statistics: if a player has stats for a team
-        in this season, they belong to that squad.
+        Populated from GET /players/squads (current squad registration per team-season).
         """
         if not player_team_pairs:
             return
@@ -810,6 +837,10 @@ def phase1_reference(
         raise SystemExit(f"No league found for id={league_id}")
     league_obj = data["response"][0]
     league = league_obj.get("league") or {}
+    if _payload_league_id(league_obj) != int(league_id):
+        raise SystemExit(
+            f"API league mismatch: expected id={league_id}, got {_payload_league_id(league_obj)}"
+        )
     w.upsert_league(league)
 
     seasons = league_obj.get("seasons") or []
@@ -838,16 +869,74 @@ def phase1_reference(
     return season_id, team_ids
 
 
+def _parse_squad_response_for_pairs(team_id: int, data: dict[str, Any]) -> list[tuple[int, int]]:
+    """Extract (player_id, team_id) pairs from GET /players/squads response."""
+    pairs: list[tuple[int, int]] = []
+    raw = data.get("response") or []
+    blocks: list[dict[str, Any]] = raw if isinstance(raw, list) else [raw] if isinstance(raw, dict) else []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        team = block.get("team") or {}
+        tid = team.get("id") or team_id
+        for pl in block.get("players") or []:
+            if not isinstance(pl, dict):
+                continue
+            inner = pl.get("player")
+            if isinstance(inner, dict):
+                pid = inner.get("id")
+            else:
+                pid = pl.get("id")
+            if tid and pid:
+                pairs.append((int(pid), int(tid)))
+    return pairs
+
+
+def _parse_squad_response_for_players(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Extract player objects suitable for Writer.upsert_players from /players/squads response.
+    Keeps the same fields shape as /players endpoint: id/name/firstname/lastname/birth/nationality/photo.
+    """
+    players: list[dict[str, Any]] = []
+    raw = data.get("response") or []
+    blocks: list[dict[str, Any]] = raw if isinstance(raw, list) else [raw] if isinstance(raw, dict) else []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        for pl in block.get("players") or []:
+            if not isinstance(pl, dict):
+                continue
+            inner = pl.get("player")
+            src = inner if isinstance(inner, dict) else pl
+            pid = src.get("id")
+            if not pid:
+                continue
+            players.append(
+                {
+                    "id": pid,
+                    "name": src.get("name"),
+                    "firstname": src.get("firstname"),
+                    "lastname": src.get("lastname"),
+                    "birth": src.get("birth") or {},
+                    "nationality": src.get("nationality"),
+                    "photo": src.get("photo") or "",
+                }
+            )
+    return players
+
+
 def phase2_players_and_squads(
     w: Writer,
     headers: dict[str, str],
     league_id: int,
     season_year: int,
     season_id: int,
+    team_ids: list[int],
     sleep: float,
 ) -> None:
     """
-    Phase 2: Paginate /players endpoint → players, squad_players, player_season_statistics.
+    Phase 2: Paginate /players endpoint → players, player_season_statistics.
+    squad_players is filled from GET /players/squads per team (current squads).
     """
     log.info("Phase 2: Players, squads, season statistics")
 
@@ -867,7 +956,6 @@ def phase2_players_and_squads(
 
         player_objs: list[dict[str, Any]] = []
         stat_rows: list[tuple[Any, ...]] = []
-        squad_pairs: list[tuple[int, int]] = []
 
         for item in response:
             player = item.get("player") or {}
@@ -888,6 +976,10 @@ def phase2_players_and_squads(
             )
 
             for st in item.get("statistics") or []:
+                # Drop other competitions (e.g. UEFA Champions League) from season stats
+                st_league = st.get("league") or {}
+                if st_league.get("id") != league_id:
+                    continue
                 team = st.get("team") or {}
                 tid = team.get("id")
                 if not tid:
@@ -910,17 +1002,46 @@ def phase2_players_and_squads(
                         Json(st),
                     )
                 )
-                squad_pairs.append((pid, tid))
 
         w.upsert_players(player_objs)
         w.upsert_player_season_statistics(season_id, stat_rows)
-        w.upsert_squad_players(season_id, squad_pairs)
         w.commit()
         total_players += len(response)
         log.info("  Players page %d/%d (%d rows)", page, total_pages, len(response))
         page += 1
 
     log.info("  Total players processed: %d", total_players)
+
+    log.info("Phase 2 (squads): /players/squads per team → squad_players")
+    all_squad_pairs: list[tuple[int, int]] = []
+    all_squad_players: list[dict[str, Any]] = []
+    for tid in team_ids:
+        squads_data = api_get(
+            # Some API-Football accounts do not support a `season` parameter on /players/squads.
+            f"{BASE_URL}/players/squads?team={tid}",
+            headers,
+            sleep,
+        )
+        if squads_data.get("errors"):
+            log.warning("  squads errors for team=%s: %s", tid, squads_data.get("errors"))
+            continue
+        all_squad_pairs.extend(_parse_squad_response_for_pairs(tid, squads_data))
+        all_squad_players.extend(_parse_squad_response_for_players(squads_data))
+
+    # FK safety: make sure every squad player exists in players table even if /players listing is incomplete.
+    w.upsert_players(all_squad_players)
+
+    # Deduplicate pairs to avoid wasted work.
+    all_squad_pairs = sorted(set(all_squad_pairs))
+    if not all_squad_pairs:
+        raise SystemExit(
+            "No squad pairs returned from /players/squads for any team. "
+            "Your API plan/account may not support squads for this league, or the endpoint returned empty."
+        )
+
+    w.upsert_squad_players(season_id, all_squad_pairs)
+    w.commit()
+    log.info("  squad_players pairs upserted: %d", len(all_squad_pairs))
 
 
 def phase3_fixtures(
@@ -945,8 +1066,15 @@ def phase3_fixtures(
         log.error("API errors on fixture list: %s", list_data["errors"])
 
     all_items: list[dict[str, Any]] = list_data.get("response") or []
+    pl_items = [it for it in all_items if _is_target_league_payload(it, league_id)]
+    if len(pl_items) != len(all_items):
+        log.warning(
+            "  Dropped %d fixtures not in league %d (list endpoint)",
+            len(all_items) - len(pl_items),
+            league_id,
+        )
     fids = []
-    for it in all_items:
+    for it in pl_items:
         fid = (it.get("fixture") or {}).get("id")
         if fid:
             fids.append(int(fid))
@@ -960,6 +1088,14 @@ def phase3_fixtures(
         detail = api_get(f"{BASE_URL}/fixtures?ids={id_str}", headers, sleep)
 
         for item in detail.get("response") or []:
+            if not _is_target_league_payload(item, league_id):
+                log.warning(
+                    "  Skipping fixture id=%s: league_id=%s (expected %s)",
+                    (item.get("fixture") or {}).get("id"),
+                    _payload_league_id(item),
+                    league_id,
+                )
+                continue
             # Ensure teams exist before fixture FK insert
             home = (item.get("teams") or {}).get("home") or {}
             away = (item.get("teams") or {}).get("away") or {}
@@ -979,6 +1115,7 @@ def phase3_fixtures(
 def phase4_postmatch_detail(
     w: Writer,
     headers: dict[str, str],
+    league_id: int,
     season_id: int,
     fixture_items: list[dict[str, Any]],
     sleep: float,
@@ -990,11 +1127,14 @@ def phase4_postmatch_detail(
       - player fixture statistics (optional, expensive: one API call per fixture)
       - mark detail_ingested_at on success
 
-    Errors are isolated per fixture — one failure does not stop the batch.
+    Only processes fixtures whose payload `league.id` matches ``league_id`` (or is
+    omitted). Errors are isolated per fixture — one failure does not stop the batch.
     """
     terminal_items = [
-        it for it in fixture_items
+        it
+        for it in fixture_items
         if ((it.get("fixture") or {}).get("status") or {}).get("short") in TERMINAL_STATUSES
+        and _is_target_league_payload(it, league_id)
     ]
     log.info(
         "Phase 4: Post-match detail for %d terminal fixtures (of %d total)",
@@ -1160,10 +1300,18 @@ def phase5_standings(
     resp = data.get("response") or []
     row_count = 0
     if resp:
-        groups = resp[0].get("league", {}).get("standings") or []
-        first_group = groups[0] if groups else []
-        row_count = len(first_group)
-        w.upsert_standings(season_id, first_group)
+        first = resp[0]
+        if not _is_target_league_payload(first, league_id):
+            log.warning(
+                "  Standings response league_id=%s (expected %s); skipping standings upsert",
+                _payload_league_id(first),
+                league_id,
+            )
+        else:
+            groups = first.get("league", {}).get("standings") or []
+            first_group = groups[0] if groups else []
+            row_count = len(first_group)
+            w.upsert_standings(season_id, first_group)
     w.commit()
     log.info("  Standings rows: %d", row_count)
 
@@ -1179,7 +1327,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--league", type=int, default=DEFAULT_LEAGUE_ID,
-        help=f"API-Football league ID (default: {DEFAULT_LEAGUE_ID} = Premier League)",
+        help=f"Premier League only: must be {DEFAULT_LEAGUE_ID}",
     )
     parser.add_argument(
         "--season", type=int, default=DEFAULT_SEASON_YEAR,
@@ -1198,6 +1346,12 @@ def main() -> None:
         help="Seconds to sleep between API calls (default: 0.15)",
     )
     args = parser.parse_args()
+
+    if args.league != DEFAULT_LEAGUE_ID:
+        raise SystemExit(
+            f"Job A ingests Premier League data only: pass --league {DEFAULT_LEAGUE_ID} "
+            f"(got {args.league})."
+        )
 
     load_repo_dotenv()
     api_key = _ensure_env("FOOTBALL_API_KEY")
@@ -1218,7 +1372,7 @@ def main() -> None:
 
         # Phase 2: Players, squads, season statistics
         phase2_players_and_squads(
-            w, headers, args.league, args.season, season_id, args.sleep
+            w, headers, args.league, args.season, season_id, team_ids, args.sleep
         )
 
         # Phase 3: Fixtures (all statuses: NS through FT)
@@ -1230,6 +1384,7 @@ def main() -> None:
         phase4_postmatch_detail(
             w,
             headers,
+            args.league,
             season_id,
             fixture_items,
             args.sleep,
