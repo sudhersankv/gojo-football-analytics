@@ -582,12 +582,12 @@ class ConditionalWriter:
 
     # ── Phase 4: Post-match detail (opt-in only) ───────────────────────────
 
-    def replace_fixture_events(self, fixture_id: int, events: list[dict[str, Any]]) -> None:
-        """Delete + reinsert all events for a fixture (same as Job A)."""
-        with self.conn.cursor() as cur:
-            cur.execute("DELETE FROM fixture_events WHERE fixture_id = %s", (fixture_id,))
-        if not events:
-            return
+    def upsert_fixture_events(self, fixture_id: int, events: list[dict[str, Any]]) -> None:
+        """
+        Conditional upsert + orphan cleanup for fixture events.
+        Tracked columns: team_id, minute, minute_extra, event_type, detail,
+        comments, player_api_id, player_name, related_*, extra.
+        """
         rows = []
         for i, ev in enumerate(events):
             team = ev.get("team") or {}
@@ -610,28 +610,62 @@ class ConditionalWriter:
                     Json(ev) if ev else None,
                 )
             )
-        if not rows:
-            return
+        if rows:
+            with self.conn.cursor() as cur:
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO fixture_events (
+                        fixture_id, event_index, team_id, minute, minute_extra,
+                        event_type, detail, comments,
+                        player_api_id, player_name, related_player_api_id, related_player_name, extra
+                    ) VALUES %s
+                    ON CONFLICT (fixture_id, event_index) DO UPDATE SET
+                      team_id       = EXCLUDED.team_id,
+                      minute        = EXCLUDED.minute,
+                      minute_extra  = EXCLUDED.minute_extra,
+                      event_type    = EXCLUDED.event_type,
+                      detail        = EXCLUDED.detail,
+                      comments      = EXCLUDED.comments,
+                      player_api_id = EXCLUDED.player_api_id,
+                      player_name   = EXCLUDED.player_name,
+                      related_player_api_id = EXCLUDED.related_player_api_id,
+                      related_player_name   = EXCLUDED.related_player_name,
+                      extra         = EXCLUDED.extra
+                    WHERE
+                      fixture_events.team_id       IS DISTINCT FROM EXCLUDED.team_id
+                      OR fixture_events.minute     IS DISTINCT FROM EXCLUDED.minute
+                      OR fixture_events.minute_extra IS DISTINCT FROM EXCLUDED.minute_extra
+                      OR fixture_events.event_type IS DISTINCT FROM EXCLUDED.event_type
+                      OR fixture_events.detail     IS DISTINCT FROM EXCLUDED.detail
+                      OR fixture_events.comments   IS DISTINCT FROM EXCLUDED.comments
+                      OR fixture_events.player_api_id IS DISTINCT FROM EXCLUDED.player_api_id
+                      OR fixture_events.player_name IS DISTINCT FROM EXCLUDED.player_name
+                      OR fixture_events.related_player_api_id IS DISTINCT FROM EXCLUDED.related_player_api_id
+                      OR fixture_events.related_player_name IS DISTINCT FROM EXCLUDED.related_player_name
+                      OR fixture_events.extra      IS DISTINCT FROM EXCLUDED.extra
+                    """,
+                    rows,
+                    page_size=500,
+                )
+        # Orphan cleanup: remove events not in the incoming set
+        valid_indices = [row[1] for row in rows]
         with self.conn.cursor() as cur:
-            execute_values(
-                cur,
-                """
-                INSERT INTO fixture_events (
-                    fixture_id, event_index, team_id, minute, minute_extra,
-                    event_type, detail, comments,
-                    player_api_id, player_name, related_player_api_id, related_player_name, extra
-                ) VALUES %s
-                """,
-                rows,
-                page_size=500,
-            )
+            if valid_indices:
+                cur.execute(
+                    "DELETE FROM fixture_events WHERE fixture_id = %s AND NOT (event_index = ANY(%s))",
+                    (fixture_id, valid_indices),
+                )
+            else:
+                cur.execute("DELETE FROM fixture_events WHERE fixture_id = %s", (fixture_id,))
 
-    def replace_fixture_team_statistics(
+    def upsert_fixture_team_statistics(
         self, fixture_id: int, statistics: list[dict[str, Any]]
     ) -> None:
-        """Delete + reinsert team-level match statistics for a fixture."""
-        with self.conn.cursor() as cur:
-            cur.execute("DELETE FROM fixture_team_statistics WHERE fixture_id = %s", (fixture_id,))
+        """
+        Conditional upsert for team-level match statistics.
+        Tracked columns: stat_value.
+        """
         rows = []
         for block in statistics:
             team = block.get("team") or {}
@@ -640,28 +674,26 @@ class ConditionalWriter:
                 continue
             for st in block.get("statistics") or []:
                 rows.append((fixture_id, tid, st.get("type") or "", _stat_value_to_text(st.get("value"))))
-        if not rows:
-            return
-        with self.conn.cursor() as cur:
-            execute_values(
-                cur,
-                """
-                INSERT INTO fixture_team_statistics (fixture_id, team_id, stat_type, stat_value)
-                VALUES %s
-                ON CONFLICT (fixture_id, team_id, stat_type) DO UPDATE SET
-                  stat_value = EXCLUDED.stat_value
-                WHERE fixture_team_statistics.stat_value IS DISTINCT FROM EXCLUDED.stat_value
-                """,
-                rows,
-                page_size=500,
-            )
+        if rows:
+            with self.conn.cursor() as cur:
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO fixture_team_statistics (fixture_id, team_id, stat_type, stat_value)
+                    VALUES %s
+                    ON CONFLICT (fixture_id, team_id, stat_type) DO UPDATE SET
+                      stat_value = EXCLUDED.stat_value
+                    WHERE fixture_team_statistics.stat_value IS DISTINCT FROM EXCLUDED.stat_value
+                    """,
+                    rows,
+                    page_size=500,
+                )
 
-    def replace_lineups(self, fixture_id: int, lineups: list[dict[str, Any]]) -> None:
-        """Replace lineup data for a fixture (formation, coach, players)."""
-        with self.conn.cursor() as cur:
-            cur.execute("DELETE FROM fixture_lineup_players WHERE fixture_id = %s", (fixture_id,))
-            cur.execute("DELETE FROM fixture_team_lineups WHERE fixture_id = %s", (fixture_id,))
-
+    def upsert_lineups(self, fixture_id: int, lineups: list[dict[str, Any]]) -> None:
+        """
+        Conditional upsert for lineup data
+        (fixture_team_lineups and fixture_lineup_players).
+        """
         meta_rows: list[tuple[Any, ...]] = []
         player_rows: list[tuple[Any, ...]] = []
 
@@ -746,57 +778,56 @@ class ConditionalWriter:
                     page_size=200,
                 )
 
-    def upsert_player_fixture_statistics(self, rows: list[tuple[Any, ...]]) -> None:
+    def upsert_player_fixture_statistics(self, fixture_id: int, rows: list[tuple[Any, ...]]) -> None:
         """
         Conditional upsert for per-player per-fixture statistics.
         Tracked columns: all stat fields (position through extra).
         """
-        if not rows:
-            return
-        with self.conn.cursor() as cur:
-            execute_values(
-                cur,
-                """
-                INSERT INTO player_fixture_statistics (
-                    fixture_id, season_id, player_id, team_id, position, rating, minutes, number,
-                    starter, substitute, goals, assists, shots_total, shots_on,
-                    passes_total, passes_key, passes_acc, tackles_total, interceptions,
-                    yellow_cards, red_cards, extra
-                ) VALUES %s
-                ON CONFLICT (fixture_id, player_id, team_id) DO UPDATE SET
-                  position      = EXCLUDED.position,
-                  rating        = EXCLUDED.rating,
-                  minutes       = EXCLUDED.minutes,
-                  number        = EXCLUDED.number,
-                  starter       = EXCLUDED.starter,
-                  substitute    = EXCLUDED.substitute,
-                  goals         = EXCLUDED.goals,
-                  assists       = EXCLUDED.assists,
-                  shots_total   = EXCLUDED.shots_total,
-                  shots_on      = EXCLUDED.shots_on,
-                  passes_total  = EXCLUDED.passes_total,
-                  passes_key    = EXCLUDED.passes_key,
-                  passes_acc    = EXCLUDED.passes_acc,
-                  tackles_total = EXCLUDED.tackles_total,
-                  interceptions = EXCLUDED.interceptions,
-                  yellow_cards  = EXCLUDED.yellow_cards,
-                  red_cards     = EXCLUDED.red_cards,
-                  extra         = EXCLUDED.extra
-                WHERE
-                  player_fixture_statistics.rating   IS DISTINCT FROM EXCLUDED.rating
-                  OR player_fixture_statistics.goals IS DISTINCT FROM EXCLUDED.goals
-                  OR player_fixture_statistics.assists IS DISTINCT FROM EXCLUDED.assists
-                  OR player_fixture_statistics.minutes IS DISTINCT FROM EXCLUDED.minutes
-                  OR player_fixture_statistics.shots_total IS DISTINCT FROM EXCLUDED.shots_total
-                  OR player_fixture_statistics.passes_total IS DISTINCT FROM EXCLUDED.passes_total
-                  OR player_fixture_statistics.tackles_total IS DISTINCT FROM EXCLUDED.tackles_total
-                  OR player_fixture_statistics.yellow_cards IS DISTINCT FROM EXCLUDED.yellow_cards
-                  OR player_fixture_statistics.red_cards IS DISTINCT FROM EXCLUDED.red_cards
-                  OR player_fixture_statistics.extra IS DISTINCT FROM EXCLUDED.extra
-                """,
-                rows,
-                page_size=400,
-            )
+        if rows:
+            with self.conn.cursor() as cur:
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO player_fixture_statistics (
+                        fixture_id, season_id, player_id, team_id, position, rating, minutes, number,
+                        starter, substitute, goals, assists, shots_total, shots_on,
+                        passes_total, passes_key, passes_acc, tackles_total, interceptions,
+                        yellow_cards, red_cards, extra
+                    ) VALUES %s
+                    ON CONFLICT (fixture_id, player_id, team_id) DO UPDATE SET
+                      position      = EXCLUDED.position,
+                      rating        = EXCLUDED.rating,
+                      minutes       = EXCLUDED.minutes,
+                      number        = EXCLUDED.number,
+                      starter       = EXCLUDED.starter,
+                      substitute    = EXCLUDED.substitute,
+                      goals         = EXCLUDED.goals,
+                      assists       = EXCLUDED.assists,
+                      shots_total   = EXCLUDED.shots_total,
+                      shots_on      = EXCLUDED.shots_on,
+                      passes_total  = EXCLUDED.passes_total,
+                      passes_key    = EXCLUDED.passes_key,
+                      passes_acc    = EXCLUDED.passes_acc,
+                      tackles_total = EXCLUDED.tackles_total,
+                      interceptions = EXCLUDED.interceptions,
+                      yellow_cards  = EXCLUDED.yellow_cards,
+                      red_cards     = EXCLUDED.red_cards,
+                      extra         = EXCLUDED.extra
+                    WHERE
+                      player_fixture_statistics.rating   IS DISTINCT FROM EXCLUDED.rating
+                      OR player_fixture_statistics.goals IS DISTINCT FROM EXCLUDED.goals
+                      OR player_fixture_statistics.assists IS DISTINCT FROM EXCLUDED.assists
+                      OR player_fixture_statistics.minutes IS DISTINCT FROM EXCLUDED.minutes
+                      OR player_fixture_statistics.shots_total IS DISTINCT FROM EXCLUDED.shots_total
+                      OR player_fixture_statistics.passes_total IS DISTINCT FROM EXCLUDED.passes_total
+                      OR player_fixture_statistics.tackles_total IS DISTINCT FROM EXCLUDED.tackles_total
+                      OR player_fixture_statistics.yellow_cards IS DISTINCT FROM EXCLUDED.yellow_cards
+                      OR player_fixture_statistics.red_cards IS DISTINCT FROM EXCLUDED.red_cards
+                      OR player_fixture_statistics.extra IS DISTINCT FROM EXCLUDED.extra
+                    """,
+                    rows,
+                    page_size=400,
+                )
 
     def mark_fixture_detail_done(self, fixture_id: int) -> None:
         """
@@ -905,6 +936,36 @@ class ConditionalWriter:
                 """,
                 (key, value),
             )
+
+    # ── Orphan cleanup (phase-level) ──────────────────────────────────────
+
+    def cleanup_squad_players(self, season_id: int, valid_pairs: list[tuple[int, int]]) -> None:
+        """Remove squad_players rows not in the incoming (player_id, team_id) set."""
+        with self.conn.cursor() as cur:
+            if valid_pairs:
+                valid_pids = [p[0] for p in valid_pairs]
+                valid_tids = [p[1] for p in valid_pairs]
+                cur.execute(
+                    """DELETE FROM squad_players
+                       WHERE season_id = %s
+                       AND (player_id, team_id) NOT IN (
+                           SELECT unnest(%s::bigint[]), unnest(%s::bigint[])
+                       )""",
+                    (season_id, valid_pids, valid_tids),
+                )
+            else:
+                cur.execute("DELETE FROM squad_players WHERE season_id = %s", (season_id,))
+
+    def cleanup_standings(self, season_id: int, valid_team_ids: list[int]) -> None:
+        with self.conn.cursor() as cur:
+            if valid_team_ids:
+                cur.execute(
+                    "DELETE FROM standings WHERE season_id = %s AND NOT (team_id = ANY(%s))",
+                    (season_id, valid_team_ids),
+                )
+            else:
+                cur.execute("DELETE FROM standings WHERE season_id = %s", (season_id,))
+
 
 
 # ---------------------------------------------------------------------------
@@ -1093,6 +1154,7 @@ def phase2_players_and_squads(
     all_squad_pairs = sorted(set(all_squad_pairs))
     if all_squad_pairs:
         w.upsert_squad_players(season_id, all_squad_pairs)
+    w.cleanup_squad_players(season_id, all_squad_pairs)
     w.commit()
     log.info("  squad_players pairs upserted: %d", len(all_squad_pairs))
 
@@ -1177,9 +1239,9 @@ def phase4_detail_refresh(
         fid = int(fid)
 
         try:
-            w.replace_fixture_events(fid, item.get("events") or [])
-            w.replace_fixture_team_statistics(fid, item.get("statistics") or [])
-            w.replace_lineups(fid, item.get("lineups") or [])
+            w.upsert_fixture_events(fid, item.get("events") or [])
+            w.upsert_fixture_team_statistics(fid, item.get("statistics") or [])
+            w.upsert_lineups(fid, item.get("lineups") or [])
 
             lineup_players: list[dict[str, Any]] = []
             for block in item.get("lineups") or []:
@@ -1268,7 +1330,7 @@ def _ingest_fixture_player_stats(
                 )
 
     w.upsert_players(player_objs)
-    w.upsert_player_fixture_statistics(stat_rows)
+    w.upsert_player_fixture_statistics(fixture_id, stat_rows)
 
 
 def phase5_standings(
@@ -1283,6 +1345,7 @@ def phase5_standings(
     )
     resp = data.get("response") or []
     row_count = 0
+    standings_team_ids: list[int] = []
     if resp:
         first = resp[0]
         if not _is_target_league(first, league_id):
@@ -1295,6 +1358,11 @@ def phase5_standings(
             first_group = groups[0] if groups else []
             row_count = len(first_group)
             w.upsert_standings(season_id, first_group)
+            for r in first_group:
+                tid = (r.get("team") or {}).get("id")
+                if tid:
+                    standings_team_ids.append(int(tid))
+    w.cleanup_standings(season_id, standings_team_ids)
     w.commit()
     log.info("  Standings rows: %d", row_count)
 
