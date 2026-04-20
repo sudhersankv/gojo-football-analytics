@@ -10,6 +10,7 @@ export default function LeagueHeader() {
   const tabs = [
     { to: `/league/${slug}`, label: "Matches" },
     { to: `/league/${slug}/standings`, label: "Standings" },
+    { to: `/league/${slug}/stats`, label: "Stats" },
   ];
 
   return (
@@ -39,7 +40,7 @@ export default function LeagueHeader() {
                     ? "text-white"
                     : "text-gray-500 hover:text-gray-800 hover:bg-gray-100"
                 }`}
-                style={active ? { backgroundColor: "#37003c" } : undefined}
+                style={active ? { backgroundColor: "var(--color-primary)" } : undefined}
               >
                 {t.label}
               </Link>

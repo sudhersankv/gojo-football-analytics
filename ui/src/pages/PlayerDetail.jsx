@@ -15,7 +15,7 @@ function StatCard({ label, value, highlight, small }) {
     <div className="rounded-lg border border-gray-200 bg-white p-3 text-center">
       <div
         className={`font-bold ${small ? "text-base" : "text-xl"} ${highlight ? "" : "text-gray-900"}`}
-        style={highlight ? { color: "#37003c" } : undefined}
+        style={highlight ? { color: "var(--color-primary)" } : undefined}
       >
         {value ?? "—"}
       </div>
@@ -90,13 +90,13 @@ export default function PlayerDetail() {
       <main className="mx-auto max-w-3xl px-4 py-6">
         <Link
           to={backTo}
-          className="mb-5 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-pl-purple transition-colors"
+          className="mb-5 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary transition-colors"
         >
           ← {fixtureId ? "Back to Match" : "Back"}
         </Link>
 
         {/* Player header */}
-        <div className="mb-6 rounded-xl text-white p-6" style={{ backgroundColor: "#37003c" }}>
+        <div className="mb-6 rounded-xl text-white p-6" style={{ backgroundColor: "var(--color-primary)" }}>
           <div className="flex items-center gap-4">
             <ImageWithFallback
               src={player.photo_url}
@@ -117,7 +117,7 @@ export default function PlayerDetail() {
               <div className="flex items-center gap-3 mt-1.5 text-xs opacity-60">
                 {player.nationality && <span>{player.nationality}</span>}
                 {player.birth_date && <span>Born: {new Date(player.birth_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</span>}
-                {mainSeason?.position && <span>{mainSeason.position}</span>}
+                {mainSeason?.position && <span>{mainSeason.position === "Attacker" ? "Forward" : mainSeason.position}</span>}
                 {mainSeason?.number && <span>#{mainSeason.number}</span>}
               </div>
             </div>
@@ -194,7 +194,7 @@ export default function PlayerDetail() {
                         <td className="py-2 px-3">
                           <Link
                             to={`/league/${currentTheme}/player/${id}?fixture_id=${fix.id}`}
-                            className="hover:text-pl-purple transition-colors"
+                            className="hover:text-primary transition-colors"
                           >
                             <div className="flex items-center gap-1.5">
                               <ImageWithFallback src={fix.home_team?.logo_url} type="team" className="h-4 w-4 object-contain" />
@@ -240,7 +240,7 @@ function MatchView({ stats, currentTheme }) {
       {stats.fixture && (
         <Link
           to={`/league/${currentTheme}/match/${stats.fixture.id}`}
-          className="mb-3 flex items-center gap-2 text-sm text-gray-600 hover:text-pl-purple transition-colors"
+          className="mb-3 flex items-center gap-2 text-sm text-gray-600 hover:text-primary transition-colors"
         >
           <ImageWithFallback src={stats.fixture.home_team?.logo_url} type="team" className="h-4 w-4 object-contain" />
           <span>{stats.fixture.home_team?.name}</span>
@@ -282,7 +282,7 @@ function MatchView({ stats, currentTheme }) {
         <StatCard label="Offsides" value={merged.offsides} small />
       </div>
 
-      <PlayerRadarChart stats={stats} mode="match" />
+      <PlayerRadarChart stats={stats} mode="match" position={stats.position} />
     </section>
   );
 }
@@ -347,7 +347,7 @@ function SeasonView({ stats }) {
         </div>
       )}
 
-      <PlayerRadarChart stats={stats} mode="season" />
+      <PlayerRadarChart stats={stats} mode="season" position={stats.position} />
     </section>
   );
 }

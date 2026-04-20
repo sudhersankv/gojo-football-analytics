@@ -14,7 +14,7 @@ import PitchView from "../components/PitchView";
 import ImageWithFallback from "../components/ImageWithFallback";
 import Spinner from "../components/Spinner";
 
-const PL_PURPLE = "#37003c";
+const PL_PURPLE = "var(--color-primary)";
 
 const STATUS_LABELS = {
   FT: "Full Time", AET: "After Extra Time", PEN: "Penalties",

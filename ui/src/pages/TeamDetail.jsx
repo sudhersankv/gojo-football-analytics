@@ -13,7 +13,7 @@ function StatBox({ label, value, highlight }) {
     <div className="rounded-lg border border-gray-200 bg-white p-3 text-center">
       <div
         className={`text-xl font-bold ${highlight ? "" : "text-gray-900"}`}
-        style={highlight ? { color: "#37003c" } : undefined}
+        style={highlight ? { color: "var(--color-primary)" } : undefined}
       >
         {value ?? "—"}
       </div>
@@ -33,7 +33,7 @@ function ratingColor(r) {
   return "text-red-600";
 }
 
-const POS_ORDER = { G: 0, D: 1, M: 2, F: 3 };
+const POS_ORDER = { G: 0, D: 1, M: 2, F: 3, A: 3 };
 
 export default function TeamDetail() {
   const { id } = useParams();
@@ -98,7 +98,7 @@ export default function TeamDetail() {
   const positionSections = Object.entries(groupedSquad).sort(
     ([a], [b]) => (POS_ORDER[a] ?? 9) - (POS_ORDER[b] ?? 9),
   );
-  const POS_FULL = { G: "Goalkeepers", D: "Defenders", M: "Midfielders", F: "Forwards" };
+  const POS_FULL = { G: "Goalkeepers", D: "Defenders", M: "Midfielders", F: "Forwards", A: "Forwards" };
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
@@ -107,13 +107,13 @@ export default function TeamDetail() {
       <main className="mx-auto max-w-3xl px-4 py-6">
         <Link
           to={`/league/${currentTheme}/standings`}
-          className="mb-5 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-pl-purple transition-colors"
+          className="mb-5 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary transition-colors"
         >
           ← Standings
         </Link>
 
         {/* Team header */}
-        <div className="mb-6 rounded-xl text-white p-6 flex items-center gap-5" style={{ backgroundColor: "#37003c" }}>
+        <div className="mb-6 rounded-xl text-white p-6 flex items-center gap-5" style={{ backgroundColor: "var(--color-primary)" }}>
           <ImageWithFallback src={team.logo_url} type="team" className="h-20 w-20 object-contain drop-shadow-lg" />
           <div>
             <h1 className="text-2xl font-bold">{team.name}</h1>
@@ -161,7 +161,7 @@ export default function TeamDetail() {
                   <Link
                     key={fx.id}
                     to={`/league/${currentTheme}/match/${fx.id}`}
-                    className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 hover:border-pl-purple/30 hover:shadow-sm transition-all"
+                    className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 hover:border-primary/30 hover:shadow-sm transition-all"
                   >
                     <ImageWithFallback src={opponent?.logo_url} type="team" className="h-6 w-6 object-contain" />
                     <span className="text-sm font-medium text-gray-800 flex-1 truncate">
@@ -218,7 +218,7 @@ export default function TeamDetail() {
                                   type="player"
                                   className="h-6 w-6 rounded-full object-cover"
                                 />
-                                <span className="font-medium text-gray-800 group-hover:text-pl-purple transition-colors">
+                                <span className="font-medium text-gray-800 group-hover:text-primary transition-colors">
                                   {p?.name || "—"}
                                 </span>
                               </Link>

@@ -2,10 +2,15 @@
 -- Source of truth: API-Football IDs (stable across requests).
 -- Run in Supabase: SQL Editor → New query → paste → Run.
 --
+-- Conventions:
+--   created_at / updated_at on all tables that represent mutable domain rows
+--   updated_at maintained automatically via trigger (see gojo_set_updated_at)
+--   fixture_events: append/replace per fixture; still has updated_at for uniformity
+--   Incremental ingest: fixtures.detail_* columns for post-match worker state
+--
 -- Covers: leagues/seasons/teams/players/squads, fixtures (+ score breakdown),
 -- standings, player season & per-fixture stats, match events, team match stats,
 -- lineups (formation + XI/subs), ingestion watermarks.
--- Optional: keep full API payload in fixtures.extra for replay / new fields.
 
 -- ---------------------------------------------------------------------------
 -- Leagues & seasons
@@ -29,6 +34,8 @@ CREATE TABLE IF NOT EXISTS seasons (
     start_date DATE,
     end_date   DATE,
     current    BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (league_id, year)
 );
 
@@ -54,6 +61,8 @@ CREATE TABLE IF NOT EXISTS teams (
 CREATE TABLE IF NOT EXISTS league_season_teams (
     season_id BIGINT NOT NULL REFERENCES seasons (id) ON DELETE CASCADE,
     team_id   BIGINT NOT NULL REFERENCES teams (id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (season_id, team_id)
 );
 
@@ -76,16 +85,16 @@ CREATE TABLE IF NOT EXISTS squad_players (
     season_id BIGINT NOT NULL REFERENCES seasons (id) ON DELETE CASCADE,
     team_id   BIGINT NOT NULL REFERENCES teams (id) ON DELETE CASCADE,
     player_id BIGINT NOT NULL REFERENCES players (id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (season_id, team_id, player_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_squad_player ON squad_players (player_id);
 
 -- ---------------------------------------------------------------------------
--- Player performance statistics (MVP: ratings)
+-- Player performance statistics
 -- ---------------------------------------------------------------------------
--- Season-level aggregated ratings (cheap to ingest; supports "player ratings")
--- Match-level ratings (from fixtures/players; use sparingly for recent fixtures)
 
 CREATE TABLE IF NOT EXISTS player_season_statistics (
     season_id     BIGINT NOT NULL REFERENCES seasons (id) ON DELETE CASCADE,
@@ -95,22 +104,16 @@ CREATE TABLE IF NOT EXISTS player_season_statistics (
     position      TEXT,
     rating        NUMERIC(6, 3),
 
-    -- Basic playing time / appearances
     appearances   INT,
     lineups       INT,
     minutes       INT,
     number        INT,
 
-    -- Core contributions
     goals         INT,
     assists       INT,
 
-    -- Keep any additional upstream stats for later dashboard features.
-    -- MVP queries should prefer structured columns above.
     extra         JSONB,
-    -- Many APIs provide more granular fields; keep MVP fields structured.
 
-    -- Housekeeping
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -121,7 +124,7 @@ CREATE INDEX IF NOT EXISTS idx_player_season_stats_season ON player_season_stati
 CREATE INDEX IF NOT EXISTS idx_player_season_stats_rating ON player_season_statistics (season_id, rating);
 
 -- ---------------------------------------------------------------------------
--- Fixtures & results (warm data; detailed stats can stay JSONB until normalized)
+-- Fixtures & results
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS fixtures (
@@ -136,10 +139,8 @@ CREATE TABLE IF NOT EXISTS fixtures (
     venue_id      BIGINT,
     venue_name    TEXT,
     referee       TEXT,
-    -- Current / final score (API goals.home / goals.away)
     home_goals    INT,
     away_goals    INT,
-    -- Score breakdown (API score.*); nullable while live or if not provided
     ht_home_goals   INT,
     ht_away_goals   INT,
     ft_home_goals   INT,
@@ -148,12 +149,13 @@ CREATE TABLE IF NOT EXISTS fixtures (
     et_away_goals   INT,
     pen_home_goals  INT,
     pen_away_goals  INT,
-    -- API teams.home.winner / teams.away.winner (derive draw: both false or null)
     home_winner     BOOLEAN,
     away_winner     BOOLEAN,
     elapsed       INT,
-    -- Full raw fixture payload (optional); normalized data lives in related tables.
     extra         JSONB,
+    detail_ingested_at      TIMESTAMPTZ,
+    detail_ingest_attempts  INT NOT NULL DEFAULT 0,
+    detail_ingest_last_error TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -164,8 +166,11 @@ CREATE INDEX IF NOT EXISTS idx_fixtures_status ON fixtures (status_short);
 CREATE INDEX IF NOT EXISTS idx_fixtures_home ON fixtures (home_team_id);
 CREATE INDEX IF NOT EXISTS idx_fixtures_away ON fixtures (away_team_id);
 
--- Fixture-level ratings for "recent match" views.
--- Use fixture_id + player_id + team_id since the API returns players grouped by team.
+CREATE INDEX IF NOT EXISTS idx_fixtures_postmatch_pending
+ON fixtures (utc_kickoff ASC, id)
+WHERE detail_ingested_at IS NULL
+  AND status_short IN ('FT', 'AET', 'PEN', 'AWD');
+
 CREATE TABLE IF NOT EXISTS player_fixture_statistics (
     fixture_id    BIGINT NOT NULL REFERENCES fixtures (id) ON DELETE CASCADE,
     season_id     BIGINT NOT NULL REFERENCES seasons (id) ON DELETE CASCADE,
@@ -177,11 +182,9 @@ CREATE TABLE IF NOT EXISTS player_fixture_statistics (
     minutes       INT,
     number        INT,
 
-    -- Starter/sub flags (best-effort; API can vary)
     starter        BOOLEAN,
     substitute    BOOLEAN,
 
-    -- MVP contributions
     goals         INT,
     assists       INT,
     shots_total   INT,
@@ -197,7 +200,6 @@ CREATE TABLE IF NOT EXISTS player_fixture_statistics (
     yellow_cards  INT,
     red_cards     INT,
 
-    -- Preserve the full upstream per-player fixture statistics payload.
     extra         JSONB,
 
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -212,8 +214,6 @@ CREATE INDEX IF NOT EXISTS idx_player_fixture_stats_season ON player_fixture_sta
 -- ---------------------------------------------------------------------------
 -- Match timeline (API-Football `events` array)
 -- ---------------------------------------------------------------------------
--- Ingestion: preserve array order in `event_index`. For substitutions, API uses
--- `player` = coming on, `assist` = going off — map to player_* / related_*.
 
 CREATE TABLE IF NOT EXISTS fixture_events (
     id              BIGSERIAL PRIMARY KEY,
@@ -227,11 +227,11 @@ CREATE TABLE IF NOT EXISTS fixture_events (
     comments        TEXT,
     player_api_id   BIGINT,
     player_name     TEXT,
-    -- Goals: second player = assist. Subs: second player = off.
     related_player_api_id BIGINT,
     related_player_name   TEXT,
     extra           JSONB,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (fixture_id, event_index)
 );
 
@@ -241,7 +241,7 @@ CREATE INDEX IF NOT EXISTS idx_fixture_events_type ON fixture_events (fixture_id
 CREATE INDEX IF NOT EXISTS idx_fixture_events_player ON fixture_events (player_api_id);
 
 -- ---------------------------------------------------------------------------
--- Team-level match statistics (API `statistics` → list of type/value per team)
+-- Team-level match statistics
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS fixture_team_statistics (
@@ -258,7 +258,7 @@ CREATE INDEX IF NOT EXISTS idx_fixture_team_stats_fixture ON fixture_team_statis
 CREATE INDEX IF NOT EXISTS idx_fixture_team_stats_team ON fixture_team_statistics (team_id);
 
 -- ---------------------------------------------------------------------------
--- Lineups (API `lineups`: formation, coach, startXI, substitutes)
+-- Lineups
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS fixture_team_lineups (
@@ -293,25 +293,10 @@ CREATE INDEX IF NOT EXISTS idx_lineup_players_fixture ON fixture_lineup_players 
 CREATE INDEX IF NOT EXISTS idx_lineup_players_player ON fixture_lineup_players (player_id);
 CREATE INDEX IF NOT EXISTS idx_lineup_players_api ON fixture_lineup_players (player_api_id);
 
--- Compatibility: if you created tables before adding `extra` JSONB columns,
--- this makes the schema forward-compatible without dropping data.
-ALTER TABLE IF EXISTS player_season_statistics ADD COLUMN IF NOT EXISTS extra JSONB;
-ALTER TABLE IF EXISTS player_fixture_statistics ADD COLUMN IF NOT EXISTS extra JSONB;
+-- ---------------------------------------------------------------------------
+-- Standings
+-- ---------------------------------------------------------------------------
 
--- Existing databases: extend `fixtures` without losing data.
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS timezone TEXT;
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS ht_home_goals INT;
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS ht_away_goals INT;
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS ft_home_goals INT;
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS ft_away_goals INT;
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS et_home_goals INT;
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS et_away_goals INT;
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS pen_home_goals INT;
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS pen_away_goals INT;
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS home_winner BOOLEAN;
-ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS away_winner BOOLEAN;
-
--- Latest standings row per team per season (overwrite on ingest).
 CREATE TABLE IF NOT EXISTS standings (
     season_id   BIGINT NOT NULL REFERENCES seasons (id) ON DELETE CASCADE,
     team_id     BIGINT NOT NULL REFERENCES teams (id) ON DELETE CASCADE,
@@ -326,6 +311,7 @@ CREATE TABLE IF NOT EXISTS standings (
     all_lose    INT,
     goals_for   INT,
     goals_against INT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (season_id, team_id)
 );
@@ -333,11 +319,161 @@ CREATE TABLE IF NOT EXISTS standings (
 CREATE INDEX IF NOT EXISTS idx_standings_rank ON standings (season_id, rank);
 
 -- ---------------------------------------------------------------------------
--- Ingestion bookkeeping (durable; survives Redis flush)
+-- Ingestion bookkeeping
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS ingestion_watermarks (
     key          TEXT PRIMARY KEY,
     value        TEXT NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- Forward-compatible ALTERs (existing databases; safe to re-run)
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE IF EXISTS player_season_statistics ADD COLUMN IF NOT EXISTS extra JSONB;
+ALTER TABLE IF EXISTS player_fixture_statistics ADD COLUMN IF NOT EXISTS extra JSONB;
+
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS timezone TEXT;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS ht_home_goals INT;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS ht_away_goals INT;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS ft_home_goals INT;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS ft_away_goals INT;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS et_home_goals INT;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS et_away_goals INT;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS pen_home_goals INT;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS pen_away_goals INT;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS home_winner BOOLEAN;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS away_winner BOOLEAN;
+
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS detail_ingested_at TIMESTAMPTZ;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS detail_ingest_attempts INT NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS fixtures ADD COLUMN IF NOT EXISTS detail_ingest_last_error TEXT;
+
+ALTER TABLE IF EXISTS seasons ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE IF EXISTS seasons ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE IF EXISTS league_season_teams ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE IF EXISTS league_season_teams ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE IF EXISTS squad_players ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE IF EXISTS squad_players ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE IF EXISTS standings ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE IF EXISTS standings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE IF EXISTS fixture_events ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+ALTER TABLE IF EXISTS ingestion_watermarks ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE IF EXISTS ingestion_watermarks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+CREATE INDEX IF NOT EXISTS idx_fixtures_postmatch_pending
+ON fixtures (utc_kickoff ASC, id)
+WHERE detail_ingested_at IS NULL
+  AND status_short IN ('FT', 'AET', 'PEN', 'AWD');
+
+-- ---------------------------------------------------------------------------
+-- updated_at triggers (automatic bump on UPDATE)
+-- ---------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION gojo_set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    NEW.updated_at := now();
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tr_gojo_leagues_updated_at ON leagues;
+CREATE TRIGGER tr_gojo_leagues_updated_at
+    BEFORE UPDATE ON leagues
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_seasons_updated_at ON seasons;
+CREATE TRIGGER tr_gojo_seasons_updated_at
+    BEFORE UPDATE ON seasons
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_teams_updated_at ON teams;
+CREATE TRIGGER tr_gojo_teams_updated_at
+    BEFORE UPDATE ON teams
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_league_season_teams_updated_at ON league_season_teams;
+CREATE TRIGGER tr_gojo_league_season_teams_updated_at
+    BEFORE UPDATE ON league_season_teams
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_players_updated_at ON players;
+CREATE TRIGGER tr_gojo_players_updated_at
+    BEFORE UPDATE ON players
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_squad_players_updated_at ON squad_players;
+CREATE TRIGGER tr_gojo_squad_players_updated_at
+    BEFORE UPDATE ON squad_players
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_player_season_statistics_updated_at ON player_season_statistics;
+CREATE TRIGGER tr_gojo_player_season_statistics_updated_at
+    BEFORE UPDATE ON player_season_statistics
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_fixtures_updated_at ON fixtures;
+CREATE TRIGGER tr_gojo_fixtures_updated_at
+    BEFORE UPDATE ON fixtures
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_player_fixture_statistics_updated_at ON player_fixture_statistics;
+CREATE TRIGGER tr_gojo_player_fixture_statistics_updated_at
+    BEFORE UPDATE ON player_fixture_statistics
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_fixture_events_updated_at ON fixture_events;
+CREATE TRIGGER tr_gojo_fixture_events_updated_at
+    BEFORE UPDATE ON fixture_events
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_fixture_team_statistics_updated_at ON fixture_team_statistics;
+CREATE TRIGGER tr_gojo_fixture_team_statistics_updated_at
+    BEFORE UPDATE ON fixture_team_statistics
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_fixture_team_lineups_updated_at ON fixture_team_lineups;
+CREATE TRIGGER tr_gojo_fixture_team_lineups_updated_at
+    BEFORE UPDATE ON fixture_team_lineups
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_fixture_lineup_players_updated_at ON fixture_lineup_players;
+CREATE TRIGGER tr_gojo_fixture_lineup_players_updated_at
+    BEFORE UPDATE ON fixture_lineup_players
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_standings_updated_at ON standings;
+CREATE TRIGGER tr_gojo_standings_updated_at
+    BEFORE UPDATE ON standings
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();
+
+DROP TRIGGER IF EXISTS tr_gojo_ingestion_watermarks_updated_at ON ingestion_watermarks;
+CREATE TRIGGER tr_gojo_ingestion_watermarks_updated_at
+    BEFORE UPDATE ON ingestion_watermarks
+    FOR EACH ROW
+    EXECUTE FUNCTION gojo_set_updated_at();

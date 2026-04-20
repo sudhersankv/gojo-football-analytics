@@ -32,7 +32,7 @@ export default function MatchCard({ match }) {
     <Link
       to={`/league/${slug}/match/${match.id}`}
       className="group block rounded-lg border border-gray-200 bg-white p-3.5
-                 hover:shadow-md hover:border-pl-purple/30 transition-all duration-200"
+                 hover:shadow-md hover:border-primary/30 transition-all duration-200"
     >
       <div className="flex items-center">
         {/* Home */}
