@@ -1,10 +1,13 @@
 """Connect test for Supabase Postgres."""
 
 import os
+import sys
+from pathlib import Path
 
 import psycopg2
 
-from env_loader import load_repo_dotenv
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from env_loader import load_repo_dotenv  # noqa: E402
 
 
 def main() -> None:
@@ -26,4 +29,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

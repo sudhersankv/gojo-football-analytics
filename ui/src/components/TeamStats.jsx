@@ -63,7 +63,7 @@ function StatBar({ label, homeVal, awayVal }) {
         </span>
         <span
           className={`font-medium text-gray-500 uppercase tracking-wide ${highlight ? "text-xs font-bold" : "text-xs"}`}
-          style={highlight ? { color: "#37003c" } : undefined}
+          style={highlight ? { color: "var(--color-primary)" } : undefined}
         >
           {STAT_LABELS[label] || label}
         </span>
@@ -74,11 +74,11 @@ function StatBar({ label, homeVal, awayVal }) {
       <div className="flex h-2 gap-0.5 rounded-full overflow-hidden bg-gray-100">
         <div
           className="rounded-l-full transition-all duration-700 ease-out"
-          style={{ width: `${hPct}%`, backgroundColor: "#37003c" }}
+          style={{ width: `${hPct}%`, backgroundColor: "var(--color-primary)" }}
         />
         <div
           className="rounded-r-full transition-all duration-700 ease-out"
-          style={{ width: `${100 - hPct}%`, backgroundColor: "#02d76a" }}
+          style={{ width: `${100 - hPct}%`, backgroundColor: "var(--color-secondary)" }}
         />
       </div>
     </div>

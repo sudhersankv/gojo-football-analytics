@@ -2,22 +2,35 @@ import { createContext, useContext, useState, useEffect, useMemo } from "react";
 
 const themes = {
   gojo: {
-    "--color-bg": "#050508",
-    "--color-primary": "#6d28d9",
-    "--color-accent": "#818cf8",
-    "--color-surface": "#0f0f18",
-    "--color-surface-alt": "#1a1a2e",
-    "--color-text": "#f1f5f9",
-    "--color-text-secondary": "#94a3b8",
-    "--color-border": "#1e1e3a",
+    "--color-bg": "#ffffff",
+    "--color-primary": "#111827",
+    "--color-accent": "#6b7280",
+    "--color-secondary": "#6b7280",
+    "--color-surface": "#ffffff",
+    "--color-surface-alt": "#f9fafb",
+    "--color-text": "#111827",
+    "--color-text-secondary": "#6b7280",
+    "--color-border": "#e5e7eb",
   },
   "premier-league": {
-    "--color-bg": "#f8f9fa",
+    "--color-bg": "#ffffff",
     "--color-primary": "#37003c",
     "--color-accent": "#00ff85",
+    "--color-secondary": "#02d76a",
     "--color-surface": "#ffffff",
-    "--color-surface-alt": "#f0f0f5",
-    "--color-text": "#1a1a2e",
+    "--color-surface-alt": "#f9fafb",
+    "--color-text": "#111827",
+    "--color-text-secondary": "#6b7280",
+    "--color-border": "#e5e7eb",
+  },
+  "la-liga": {
+    "--color-bg": "#ffffff",
+    "--color-primary": "#ee8707",
+    "--color-accent": "#1a3c6e",
+    "--color-secondary": "#1a3c6e",
+    "--color-surface": "#ffffff",
+    "--color-surface-alt": "#f9fafb",
+    "--color-text": "#111827",
     "--color-text-secondary": "#6b7280",
     "--color-border": "#e5e7eb",
   },
@@ -29,6 +42,12 @@ const leagueMeta = {
     leagueId: 39,
     seasonYear: 2025,
     logo: "https://media.api-sports.io/football/leagues/39.png",
+  },
+  "la-liga": {
+    name: "La Liga",
+    leagueId: 140,
+    seasonYear: 2025,
+    logo: "https://media.api-sports.io/football/leagues/140.png",
   },
 };
 
@@ -48,7 +67,7 @@ export function ThemeProvider({ children }) {
     [currentTheme],
   );
 
-  const isDark = currentTheme === "gojo";
+  const isDark = false;
 
   const value = useMemo(
     () => ({ currentTheme, setCurrentTheme, league, isDark, themes: Object.keys(themes) }),

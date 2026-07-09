@@ -81,8 +81,8 @@ export default function TeamComparisonChart({ stats, homeTeamId, awayTeamId, hom
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend wrapperStyle={{ fontSize: "12px", color: "#374151" }} />
-          <Bar dataKey={hName} radius={[4, 4, 0, 0]} fill="#37003c" />
-          <Bar dataKey={aName} radius={[4, 4, 0, 0]} fill="#02d76a" />
+          <Bar dataKey={hName} radius={[4, 4, 0, 0]} fill="var(--color-primary)" />
+          <Bar dataKey={aName} radius={[4, 4, 0, 0]} fill="var(--color-secondary)" />
         </BarChart>
       </ResponsiveContainer>
     </div>

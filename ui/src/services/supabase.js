@@ -280,6 +280,67 @@ export async function getTeamFixtures(seasonId, teamId, limit = 10) {
   return data || [];
 }
 
+// ── Season Stats (leaderboards) ─────────────────────────────────────
+
+export async function getTopScorers(seasonId, limit = 20) {
+  const { data, error } = await supabase
+    .from("player_season_statistics")
+    .select(
+      `*, player:players!player_id(id, name, photo_url), team:teams!team_id(id, name, logo_url)`,
+    )
+    .eq("season_id", seasonId)
+    .gt("goals", 0)
+    .order("goals", { ascending: false })
+    .order("appearances", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getTopAssists(seasonId, limit = 20) {
+  const { data, error } = await supabase
+    .from("player_season_statistics")
+    .select(
+      `*, player:players!player_id(id, name, photo_url), team:teams!team_id(id, name, logo_url)`,
+    )
+    .eq("season_id", seasonId)
+    .gt("assists", 0)
+    .order("assists", { ascending: false })
+    .order("appearances", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getTopRated(seasonId, limit = 20) {
+  const { data, error } = await supabase
+    .from("player_season_statistics")
+    .select(
+      `*, player:players!player_id(id, name, photo_url), team:teams!team_id(id, name, logo_url)`,
+    )
+    .eq("season_id", seasonId)
+    .not("rating", "is", null)
+    .gte("appearances", 5)
+    .order("rating", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getMostAppearances(seasonId, limit = 20) {
+  const { data, error } = await supabase
+    .from("player_season_statistics")
+    .select(
+      `*, player:players!player_id(id, name, photo_url), team:teams!team_id(id, name, logo_url)`,
+    )
+    .eq("season_id", seasonId)
+    .gt("appearances", 0)
+    .order("appearances", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
 export async function getPlayerRecentMatches(playerId, limit = 10) {
   const { data, error } = await supabase
     .from("player_fixture_statistics")

@@ -41,7 +41,7 @@ export default function Standings() {
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <LeagueHeader />
-      <div className="h-1" style={{ background: "linear-gradient(to right, #37003c, #37003c, #00ff85)" }} />
+      <div className="h-1" style={{ background: "linear-gradient(to right, var(--color-primary), var(--color-primary), var(--color-accent))" }} />
 
       <main className="mx-auto max-w-4xl px-4 py-6">
         <h2 className="text-xl font-bold text-gray-900 mb-5">Standings</h2>
@@ -85,7 +85,7 @@ export default function Standings() {
                       className={`border-t border-gray-100 transition-colors hover:bg-gray-50 border-l-[3px] ${
                         isTop4 ? "" : "border-l-transparent"
                       }`}
-                      style={isTop4 ? { borderLeftColor: "#37003c" } : undefined}
+                      style={isTop4 ? { borderLeftColor: "var(--color-primary)" } : undefined}
                     >
                       <td className="py-2.5 px-3 text-center font-bold text-gray-500 tabular-nums">
                         {row.rank}
@@ -96,7 +96,7 @@ export default function Standings() {
                           className="flex items-center gap-2 group"
                         >
                           <ImageWithFallback src={team?.logo_url} type="team" className="h-5 w-5 object-contain" />
-                          <span className="font-semibold text-gray-800 group-hover:text-pl-purple transition-colors">
+                          <span className="font-semibold text-gray-800 group-hover:text-primary transition-colors">
                             {team?.name || "—"}
                           </span>
                         </Link>
@@ -110,7 +110,7 @@ export default function Standings() {
                       <td className="py-2.5 px-3 text-center font-semibold text-gray-800 tabular-nums">
                         {row.goals_diff != null ? (row.goals_diff > 0 ? `+${row.goals_diff}` : row.goals_diff) : "—"}
                       </td>
-                      <td className="py-2.5 px-3 text-center font-bold tabular-nums" style={{ color: "#37003c" }}>{row.points}</td>
+                      <td className="py-2.5 px-3 text-center font-bold tabular-nums" style={{ color: "var(--color-primary)" }}>{row.points}</td>
                       <td className="py-2.5 px-3 text-center hidden sm:table-cell">
                         <div className="flex justify-center gap-0.5">
                           {(row.form || "").split("").map((ch, fi) => (
